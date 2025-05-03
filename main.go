@@ -14,9 +14,9 @@ import (
 	"github.com/slack-go/slack"
 )
 
-// Task represents a task fetched from Notion
+// Task は Notion から取得したタスクを表します
 type Task struct {
-	ID             notionapi.ObjectID // Changed from PageID to ObjectID (string)
+	ID             notionapi.ObjectID // PageID から ObjectID (string) に変更
 	Title          string
 	DueStart       *notionapi.Date
 	DueEnd         *notionapi.Date
@@ -26,17 +26,17 @@ type Task struct {
 	Workload       string
 	Memo           string
 	URL            string
-	NotifyDays     int // Custom notification days (1, 3, 7, or default 3)
+	NotifyDays     int // カスタム通知日数 (1, 3, 7, またはデフォルト 3)
 }
 
-// Constants for default values and configuration keys
+// デフォルト値と設定キーの定数
 const (
 	defaultNotifyDays  = 3
 	notionTokenEnv     = "NOTION_TOKEN"
-	notionDBIDEnv      = "NOTION_DB_ID" // Expecting DB ID from env var now
+	notionDBIDEnv      = "NOTION_DB_ID" // DB ID は環境変数から取得する想定に変更
 	slackTokenEnv      = "SLACK_BOT_TOKEN"
 	slackChannelEnv    = "SLACK_CHANNEL_ID"
-	notifyDaysProp     = "通知日数" // Custom notification days property name
+	notifyDaysProp     = "通知日数" // カスタム通知日数プロパティ名
 	priorityProp       = "Priority"
 	typeProp           = "Type"
 	scheduleStatusProp = "Schedule Status"
@@ -46,108 +46,108 @@ const (
 	dueProp            = "Due"
 )
 
-// Priority order mapping
+// 優先度の順序マッピング
 var priorityOrder = map[string]int{
 	"High":   1,
 	"Medium": 2,
 	"Low":    3,
-	"":       4, // Treat empty priority as lowest
+	"":       4, // 空の優先度は最低として扱う
 }
 
 func main() {
-	log.Println("Starting Notion Notifyer...")
+	log.Println("Notion Notifyer を開始します...")
 
-	// --- Configuration ---
+	// --- 設定 ---
 	notionToken := os.Getenv(notionTokenEnv)
 	dbID := os.Getenv(notionDBIDEnv)
 	slackToken := os.Getenv(slackTokenEnv)
 	slackChannelID := os.Getenv(slackChannelEnv)
 
 	if notionToken == "" || dbID == "" || slackToken == "" || slackChannelID == "" {
-		log.Fatalf("Missing required environment variables: %s, %s, %s, %s",
+		log.Fatalf("必要な環境変数がありません: %s, %s, %s, %s",
 			notionTokenEnv, notionDBIDEnv, slackTokenEnv, slackChannelEnv)
 	}
 
-	// --- Notion Client ---
+	// --- Notion クライアント ---
 	notionClient := notionapi.NewClient(notionapi.Token(notionToken))
 	ctx := context.Background()
 
-	// --- Fetch Tasks from Notion ---
+	// --- Notion からタスクを取得 ---
 	tasks, err := fetchNotionTasks(ctx, notionClient, dbID)
 	if err != nil {
-		log.Fatalf("Error fetching Notion tasks: %v", err)
+		log.Fatalf("Notion タスクの取得エラー: %v", err)
 	}
-	log.Printf("Fetched %d tasks initially.", len(tasks))
+	log.Printf("最初に %d 件のタスクを取得しました。", len(tasks))
 
-	// --- Filter Tasks ---
+	// --- タスクのフィルタリング ---
 	now := time.Now()
 	tasksToNotify := filterTasks(tasks, now)
-	log.Printf("Filtered down to %d tasks to potentially notify.", len(tasksToNotify))
+	log.Printf("通知対象の可能性のあるタスク %d 件に絞り込みました。", len(tasksToNotify))
 
 	if len(tasksToNotify) == 0 {
-		log.Println("No tasks to notify today.")
+		log.Println("本日は通知するタスクはありません。")
 		return
 	}
 
-	// --- Format Slack Message ---
+	// --- Slack メッセージのフォーマット ---
 	message := formatSlackMessage(tasksToNotify, now)
 	if message == "" {
-		log.Println("Formatted message is empty, nothing to send.")
+		log.Println("フォーマットされたメッセージが空です。送信するものはありません。")
 		return
 	}
 
-	// --- Send to Slack ---
+	// --- Slack へ送信 ---
 	slackClient := slack.New(slackToken)
 	_, timestamp, err := slackClient.PostMessage(
 		slackChannelID,
-		slack.MsgOptionText(message, false), // Fallback text
+		slack.MsgOptionText(message, false), // フォールバックテキスト
 		slack.MsgOptionBlocks(buildSlackBlocks(tasksToNotify, now)...),
-		// slack.MsgOptionAsUser(true), // Removed this option as it might conflict with bot tokens
+		// slack.MsgOptionAsUser(true), // ボットトークンと競合する可能性があるため削除
 	)
 	if err != nil {
-		log.Fatalf("Error sending Slack message: %v", err)
+		log.Fatalf("Slack メッセージの送信エラー: %v", err)
 	}
 
-	log.Printf("Successfully sent notification to Slack channel %s at %s", slackChannelID, timestamp)
-	log.Println("Notion Notifyer finished.")
+	log.Printf("Slack チャンネル %s に通知を送信しました: %s", slackChannelID, timestamp)
+	log.Println("Notion Notifyer が完了しました。")
 }
 
-// fetchNotionTasks fetches tasks from the specified Notion database.
+// fetchNotionTasks は指定された Notion データベースからタスクを取得します。
 func fetchNotionTasks(ctx context.Context, client *notionapi.Client, dbID string) ([]Task, error) {
 	var allTasks []Task
 	var cursor notionapi.Cursor
-	sevenDaysLater := time.Now().AddDate(0, 0, 7) // Fetch tasks due within the next 7 days
+	sevenDaysLater := time.Now().AddDate(0, 0, 7) // 次の7日以内に期限が来るタスクを取得
 
 	for {
 		request := &notionapi.DatabaseQueryRequest{
 			Filter: &notionapi.AndCompoundFilter{
-				// Due date is on or before 7 days from now
+				// 期限日が今から7日以内
 				&notionapi.PropertyFilter{
 					Property: dueProp,
 					Date: &notionapi.DateFilterCondition{
 						OnOrBefore: (*notionapi.Date)(&sevenDaysLater),
 					},
 				},
-				// Due date is not empty
+				// 期限日が空でない
 				&notionapi.PropertyFilter{
 					Property: dueProp,
 					Date: &notionapi.DateFilterCondition{
 						IsNotEmpty: true,
 					},
 				},
-				// Schedule Status is one of the active/pending statuses
+				// スケジュールステータスがアクティブ/保留中のいずれか
 				createStatusFilter(),
 			},
 			Sorts: []notionapi.SortObject{
-				{Property: dueProp, Direction: notionapi.SortOrderASC}, // Basic sort by due date
+				{Property: dueProp, Direction: notionapi.SortOrderASC}, // 期限日で基本的な昇順ソート
 			},
-			PageSize:    100, // Max page size
+			PageSize:    100, // 最大ページサイズ
 			StartCursor: cursor,
 		}
 
 		resp, err := client.Database.Query(ctx, notionapi.DatabaseID(dbID), request)
 		if err != nil {
-			return nil, fmt.Errorf("database query failed: %w", err)
+			return nil, fmt.Errorf("データベースクエリ失敗: %w", err)
 		}
 
 		for _, page := range resp.Results {
@@ -166,10 +166,10 @@ func fetchNotionTasks(ctx context.Context, client *notionapi.Client, dbID string
 	return allTasks, nil
 }
 
-// createStatusFilter generates the OR filter for relevant schedule statuses.
+// createStatusFilter は関連するスケジュールステータスの OR フィルターを生成します。
 func createStatusFilter() notionapi.OrCompoundFilter {
-	// Statuses indicating the task is not yet Done or Archived
-	relevantStatuses := []string{"CannotDo", "Next", "Want", "ToDo", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Doing"} // Added "Doing"
+	// タスクがまだ完了またはアーカイブされていないことを示すステータス
+	relevantStatuses := []string{"CannotDo", "Next", "Want", "ToDo", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Doing"} // "Doing" を追加
 	var filters []notionapi.Filter
 	for _, status := range relevantStatuses {
 		filters = append(filters, &notionapi.PropertyFilter{
@@ -182,15 +182,15 @@ func createStatusFilter() notionapi.OrCompoundFilter {
 	return notionapi.OrCompoundFilter(filters)
 }
 
-// parseNotionPage converts a Notion page object into a Task struct.
+// parseNotionPage は Notion ページオブジェクトを Task 構造体に変換します。
 func parseNotionPage(page notionapi.Page) *Task {
 	task := Task{
 		ID:         page.ID,
 		URL:        page.URL,
-		NotifyDays: defaultNotifyDays, // Default notification days
+		NotifyDays: defaultNotifyDays, // デフォルトの通知日数
 	}
 
-	// Iterate over properties safely
+	// プロパティを安全に反復処理
 	for propName, propValue := range page.Properties {
 		switch propName {
 		case nameProp:
@@ -200,72 +200,72 @@ func parseNotionPage(page notionapi.Page) *Task {
 		case dueProp:
 			if p, ok := propValue.(*notionapi.DateProperty); ok && p.Date != nil {
 				task.DueStart = p.Date.Start
-				task.DueEnd = p.Date.End // Can be nil if it's just a date without time or end date
+				task.DueEnd = p.Date.End // 時間や終了日がない日付の場合は nil になる可能性あり
 			}
 		case priorityProp:
-			if p, ok := propValue.(*notionapi.SelectProperty); ok && p.Select.Name != "" { // Check Name instead of nil
+			if p, ok := propValue.(*notionapi.SelectProperty); ok && p.Select.Name != "" { // nil の代わりに Name をチェック
 				task.Priority = p.Select.Name
 			}
 		case typeProp:
-			if p, ok := propValue.(*notionapi.SelectProperty); ok && p.Select.Name != "" { // Check Name instead of nil
+			if p, ok := propValue.(*notionapi.SelectProperty); ok && p.Select.Name != "" { // nil の代わりに Name をチェック
 				task.Type = p.Select.Name
 			}
 		case scheduleStatusProp:
-			if p, ok := propValue.(*notionapi.StatusProperty); ok && p.Status.Name != "" { // Check Name instead of nil
+			if p, ok := propValue.(*notionapi.StatusProperty); ok && p.Status.Name != "" { // nil の代わりに Name をチェック
 				task.ScheduleStatus = p.Status.Name
 			}
 		case workloadProp:
-			if p, ok := propValue.(*notionapi.SelectProperty); ok && p.Select.Name != "" { // Check Name instead of nil
+			if p, ok := propValue.(*notionapi.SelectProperty); ok && p.Select.Name != "" { // nil の代わりに Name をチェック
 				task.Workload = p.Select.Name
 			}
 		case memoProp:
-			// Memo might be empty or have multiple rich text parts
+			// メモは空か、複数のリッチテキスト部分を持つ可能性がある
 			if p, ok := propValue.(*notionapi.RichTextProperty); ok && len(p.RichText) > 0 {
 				var memoBuilder strings.Builder
 				for i, rt := range p.RichText {
 					if i > 0 {
-						memoBuilder.WriteString("\n") // Add newline between parts if needed
+						memoBuilder.WriteString("\n") // 必要に応じてパーツ間に改行を追加
 					}
 					memoBuilder.WriteString(rt.Text.Content)
 				}
 				task.Memo = memoBuilder.String()
 			}
 		case notifyDaysProp:
-			if p, ok := propValue.(*notionapi.SelectProperty); ok && p.Select.Name != "" { // Check Name instead of nil
+			if p, ok := propValue.(*notionapi.SelectProperty); ok && p.Select.Name != "" { // nil の代わりに Name をチェック
 				if days, err := strconv.Atoi(p.Select.Name); err == nil && (days == 1 || days == 3 || days == 7) {
 					task.NotifyDays = days
 				} else {
-					log.Printf("Warning: Invalid value '%s' in '%s' for task '%s'. Using default %d days.",
-						p.Select.Name, notifyDaysProp, task.Title, defaultNotifyDays)
+					log.Printf("警告: '%s' の '%s' に無効な値 '%s' が指定されています。デフォルトの %d 日を使用します。",
+						task.Title, notifyDaysProp, p.Select.Name, defaultNotifyDays)
 				}
 			}
 		}
 	}
 
-	// Basic validation: Title and Due date are essential
+	// 必須プロパティの検証: タイトルと期限日は必須
 	if task.Title == "" || (task.DueStart == nil && task.DueEnd == nil) {
-		log.Printf("Warning: Skipping page ID %s due to missing Title or Due date.", page.ID)
+		log.Printf("警告: タイトルまたは期限日が欠落しているため、ページ ID %s をスキップします。", page.ID)
 		return nil
 	}
 
 	return &task
 }
 
-// filterTasks filters the fetched tasks based on notification rules and current time.
+// filterTasks は、通知ルールと現在の時刻に基づいて、取得したタスクをフィルタリングします。
 func filterTasks(tasks []Task, now time.Time) []Task {
 	var filtered []Task
 	currentHour := now.Hour()
-	isUrgentNotificationTime := (currentHour == 13 || currentHour == 20) // 1 PM or 8 PM
+	isUrgentNotificationTime := (currentHour == 13 || currentHour == 20) // 午後 1 時または午後 8 時
 
 	for _, task := range tasks {
 		if shouldNotify(task, now) {
-			// If it's 1 PM or 8 PM, only include tasks due *today*
+			// 午後 1 時または午後 8 時の場合は、今日が期限のタスクのみを含めます
 			if isUrgentNotificationTime {
 				if isDueToday(task, now) {
 					filtered = append(filtered, task)
 				}
 			} else {
-				// Otherwise (e.g., 9 AM), include all tasks that meet the notification criteria
+				// それ以外の場合 (例: 午前 9 時)、通知基準を満たすすべてのタスクを含めます
 				filtered = append(filtered, task)
 			}
 		}
@@ -273,29 +273,29 @@ func filterTasks(tasks []Task, now time.Time) []Task {
 	return filtered
 }
 
-// shouldNotify determines if a task notification should be sent based on its due date and custom settings.
+// shouldNotify は、タスクの期限とカスタム設定に基づいて、タスク通知を送信する必要があるかどうかを判断します。
 func shouldNotify(task Task, now time.Time) bool {
 	targetDate := getTargetDueDate(task)
 	if targetDate == nil {
-		return false // Should not happen due to earlier checks, but safety first
+		return false // 念のため
 	}
 
-	// Calculate days remaining (considering only the date part)
+	// 残り日数を計算 (日付部分のみを考慮)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	dueDate := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, now.Location())
 
-	// If due date is in the past, don't notify (unless it's today)
+	// 期限日が過去の場合は通知しない (今日の場合は除く)
 	if dueDate.Before(today) {
 		return false
 	}
 
 	daysRemaining := int(dueDate.Sub(today).Hours() / 24)
 
-	// Notify if days remaining is less than or equal to the configured notification days
+	// 残り日数が設定された通知日数以下の場合に通知
 	return daysRemaining <= task.NotifyDays
 }
 
-// isDueToday checks if the task's target due date is today.
+// isDueToday は、タスクの目標期限日が今日であるかどうかを確認します。
 func isDueToday(task Task, now time.Time) bool {
 	targetDate := getTargetDueDate(task)
 	if targetDate == nil {
@@ -306,7 +306,7 @@ func isDueToday(task Task, now time.Time) bool {
 	return dueDate.Equal(today)
 }
 
-// getTargetDueDate returns the effective due date (End preferred, then Start).
+// getTargetDueDate は、有効な期限日 (終了日優先、次に開始日) を返します。
 func getTargetDueDate(task Task) *time.Time {
 	if task.DueEnd != nil {
 		t := time.Time(*task.DueEnd)
@@ -316,88 +316,87 @@ func getTargetDueDate(task Task) *time.Time {
 		t := time.Time(*task.DueStart)
 		return &t
 	}
-	return nil // Should have a due date based on query filters
+	return nil // 期限日は必須なので、ここには来ないはず
 }
 
-// formatDueDate formats the due date for display.
+// formatDueDate は表示用に期限日をフォーマットします。
 func formatDueDate(task Task) string {
-	layout := "2006-01-02" // Date only layout
+	layout := "2006-01-02" // 日付のみのレイアウト
 	if task.DueEnd != nil {
-		// If End exists, check if Start also exists and is different
-		// Use time.Time().Equal() for comparison
+		// 終了日が存在する場合、開始日も存在し、かつ異なるかどうかを確認
 		if task.DueStart != nil && !time.Time(*task.DueStart).Equal(time.Time(*task.DueEnd)) {
-			// Check if they are on the same day, format time if they are
+			// 同じ日の場合は、時刻をフォーマット
 			startT := time.Time(*task.DueStart)
 			endT := time.Time(*task.DueEnd)
 			if startT.Year() == endT.Year() && startT.Month() == endT.Month() && startT.Day() == endT.Day() {
-				timeLayout := "15:04" // Time only layout if available
+				timeLayout := "15:04" // 時刻のみのレイアウト (利用可能な場合)
 				startStr := ""
 				endStr := ""
-				if !startT.IsZero() && startT.Hour() != 0 || startT.Minute() != 0 { // Check if time part is meaningful
+				if !startT.IsZero() && startT.Hour() != 0 || startT.Minute() != 0 { // 時刻部分に意味があるか確認
 					startStr = startT.Format(timeLayout)
 				}
-				if !endT.IsZero() && endT.Hour() != 0 || endT.Minute() != 0 { // Check if time part is meaningful
+				if !endT.IsZero() && endT.Hour() != 0 || endT.Minute() != 0 { // 時刻部分に意味があるか確認
 					endStr = endT.Format(timeLayout)
 				}
 				if startStr != "" && endStr != "" {
 					return fmt.Sprintf("%s (%s ~ %s)", endT.Format(layout), startStr, endStr)
-				} else if endStr != "" { // Only end time meaningful
+				} else if endStr != "" { // 終了時刻のみ意味がある
 					return fmt.Sprintf("%s (~%s)", endT.Format(layout), endStr)
-				} else if startStr != "" { // Only start time meaningful
+				} else if startStr != "" { // 開始時刻のみ意味がある
 					return fmt.Sprintf("%s (%s~)", endT.Format(layout), startStr)
 				}
-				// Fallback if times are zero
+				// 時刻がゼロの場合はフォールバック
 				return endT.Format(layout)
 
 			} else {
-				// Different days
+				// 日付が異なる場合
 				return fmt.Sprintf("%s ~ %s", startT.Format(layout), endT.Format(layout))
 			}
 		}
-		// Only End date exists or Start is the same as End
+		// 終了日のみ存在するか、開始日と終了日が同じ場合
 		return time.Time(*task.DueEnd).Format(layout)
 	}
-	// Only Start date exists
+	// 開始日のみ存在する場合
 	if task.DueStart != nil {
 		return time.Time(*task.DueStart).Format(layout)
 	}
-	return "N/A" // Should not happen
+	return "N/A" // ここには来ないはず
 }
 
-// --- Slack Formatting & Sending ---
+// --- Slack のフォーマットと送信 ---
 
-// buildSlackBlocks creates the Slack message blocks.
+// buildSlackBlocks は Slack メッセージのブロックを作成します。
 func buildSlackBlocks(tasks []Task, now time.Time) []slack.Block {
-	// Group tasks by urgency
+	// タスクを緊急度でグループ化
 	todayTasks, threeDayTasks, sevenDayTasks := groupTasksByUrgency(tasks, now)
 
-	// Sort tasks within each group
+	// 各グループ内でタスクをソート
 	sortTasks(todayTasks)
 	sortTasks(threeDayTasks)
 	sortTasks(sevenDayTasks)
 
 	var blocks []slack.Block
 
-	// Header
-	blocks = append(blocks, slack.NewHeaderBlock(slack.NewTextBlockObject(slack.PlainTextType, "🔔 Notion Task Reminders", true, false)))
+	// ヘッダー
+	blocks = append(blocks, slack.NewHeaderBlock(slack.NewTextBlockObject(slack.PlainTextType, "🔔 Notion タスクリマインダー", true, false)))
 
-	// Add sections for each group if they have tasks
-	blocks = appendSection(blocks, "🚨 Due Today", todayTasks)
-	blocks = appendSection(blocks, "⚠️ Due Within 3 Days", threeDayTasks)
-	blocks = appendSection(blocks, "🗓️ Due Within 7 Days", sevenDayTasks)
+	// 各グループにタスクがある場合は、セクションを追加
+	blocks = appendSection(blocks, "🚨 今日が期限", todayTasks)
+	blocks = appendSection(blocks, "⚠️ 3 日以内に期限", threeDayTasks)
+	blocks = appendSection(blocks, "🗓️ 7 日以内に期限", sevenDayTasks)
 
-	// Footer
+	// フッター
 	blocks = append(blocks, slack.NewDividerBlock())
-	blocks = append(blocks, slack.NewContextBlock("", slack.NewTextBlockObject(slack.MarkdownType, fmt.Sprintf("Generated at %s", now.Format(time.RFC1123)), false, false)))
+	blocks = append(blocks, slack.NewContextBlock("", slack.NewTextBlockObject(slack.MarkdownType, fmt.Sprintf("生成日時: %s", now.Format(time.RFC1123)), false, false)))
 
 	return blocks
 }
 
-// groupTasksByUrgency categorizes tasks based on their due date relative to now.
+// groupTasksByUrgency は、タスクを期限日に基づいて分類します。
 func groupTasksByUrgency(tasks []Task, now time.Time) (today, threeDays, sevenDays []Task) {
 	todayBoundary := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	threeDaysBoundary := todayBoundary.AddDate(0, 0, 3)
-	sevenDaysBoundary := todayBoundary.AddDate(0, 0, 7) // Although initial fetch is 7 days, group explicitly
+	sevenDaysBoundary := todayBoundary.AddDate(0, 0, 7) // 最初の取得は 7 日間ですが、明示的にグループ化
 
 	for _, task := range tasks {
 		dueDate := getTargetDueDate(task)
@@ -406,41 +405,41 @@ func groupTasksByUrgency(tasks []Task, now time.Time) (today, threeDays, sevenDa
 		}
 		dueDateTime := time.Date(dueDate.Year(), dueDate.Month(), dueDate.Day(), 0, 0, 0, 0, now.Location())
 
-		if !dueDateTime.After(todayBoundary) { // Due today or overdue (overdue shouldn't happen based on filter)
+		if !dueDateTime.After(todayBoundary) { // 今日が期限または期限切れ (フィルターにより期限切れは発生しないはず)
 			today = append(today, task)
-		} else if !dueDateTime.After(threeDaysBoundary) { // Due within 1-3 days
+		} else if !dueDateTime.After(threeDaysBoundary) { // 1 ～ 3 日以内に期限
 			threeDays = append(threeDays, task)
-		} else if !dueDateTime.After(sevenDaysBoundary) { // Due within 4-7 days
+		} else if !dueDateTime.After(sevenDaysBoundary) { // 4 ～ 7 日以内に期限
 			sevenDays = append(sevenDays, task)
 		}
-		// Tasks due later than 7 days are already filtered out
+		// 7 日より後のタスクはすでに除外されています
 	}
 	return
 }
 
-// sortTasks sorts tasks first by priority (High > Medium > Low > None), then by due date.
+// sortTasks は、最初に優先度 (高 > 中 > 低 > なし) でタスクをソートし、次に期限日でソートします。
 func sortTasks(tasks []Task) {
 	sort.SliceStable(tasks, func(i, j int) bool {
 		priI := priorityOrder[tasks[i].Priority]
 		priJ := priorityOrder[tasks[j].Priority]
 		if priI != priJ {
-			return priI < priJ // Lower number means higher priority
+			return priI < priJ // 数値が小さいほど優先度が高い
 		}
-		// If priorities are the same, sort by due date (earlier first)
+		// 優先度が同じ場合は、期限日でソート (早い順)
 		dueI := getTargetDueDate(tasks[i])
 		dueJ := getTargetDueDate(tasks[j])
 		if dueI != nil && dueJ != nil {
 			return dueI.Before(*dueJ)
 		}
-		// Handle nil cases (shouldn't happen ideally)
+		// nil の場合を処理 (理想的には発生しないはず)
 		return dueI != nil
 	})
 }
 
-// appendSection adds a formatted section for a task group to the Slack blocks.
+// appendSection は、タスクグループのフォーマットされたセクションを Slack ブロックに追加します。
 func appendSection(blocks []slack.Block, title string, tasks []Task) []slack.Block {
 	if len(tasks) == 0 {
-		return blocks // Don't add empty sections
+		return blocks // 空のセクションは追加しない
 	}
 
 	blocks = append(blocks, slack.NewDividerBlock())
@@ -450,10 +449,10 @@ func appendSection(blocks []slack.Block, title string, tasks []Task) []slack.Blo
 	)
 
 	for _, task := range tasks {
-		taskText := fmt.Sprintf("*<%s|%s>*", task.URL, task.Title) // Link + Title
+		taskText := fmt.Sprintf("*<%s|%s>*", task.URL, task.Title) // リンク + タイトル
 
 		var details []string
-		details = append(details, fmt.Sprintf("*Due:* %s", formatDueDate(task)))
+		details = append(details, fmt.Sprintf("*期限:* %s", formatDueDate(task)))
 		if task.Priority != "" {
 			priorityEmoji := ""
 			switch task.Priority {
@@ -464,74 +463,74 @@ func appendSection(blocks []slack.Block, title string, tasks []Task) []slack.Blo
 			case "Low":
 				priorityEmoji = "⚫ "
 			}
-			details = append(details, fmt.Sprintf("*Priority:* %s%s", priorityEmoji, task.Priority))
+			details = append(details, fmt.Sprintf("*優先度:* %s%s", priorityEmoji, task.Priority))
 		}
 		if task.Type != "" {
-			details = append(details, fmt.Sprintf("*Type:* %s", task.Type))
+			details = append(details, fmt.Sprintf("*種類:* %s", task.Type))
 		}
 		if task.ScheduleStatus != "" {
-			details = append(details, fmt.Sprintf("*Status:* %s", task.ScheduleStatus))
+			details = append(details, fmt.Sprintf("*ステータス:* %s", task.ScheduleStatus))
 		}
 		if task.Workload != "" {
-			details = append(details, fmt.Sprintf("*Workload:* %s", task.Workload))
+			details = append(details, fmt.Sprintf("*ワークロード:* %s", task.Workload))
 		}
-		// Add Memo if it exists, truncate if too long for Slack block
+		// メモが存在する場合は追加。Slack ブロックの制限を超える場合は切り捨て
 		if task.Memo != "" {
-			maxMemoLength := 150 // Limit memo length in the main block
+			maxMemoLength := 150 // メインブロックのメモの最大長
 			truncatedMemo := task.Memo
 			if len(truncatedMemo) > maxMemoLength {
 				truncatedMemo = truncatedMemo[:maxMemoLength] + "..."
 			}
-			// Escape markdown characters in memo
+			// メモ内の Markdown 文字をエスケープ
 			escapedMemo := strings.ReplaceAll(truncatedMemo, "*", "\\*")
-			escapedMemo = strings.ReplaceAll(escapedMemo, "_", "\\_")
-			escapedMemo = strings.ReplaceAll(escapedMemo, "~", "\\~")
-			escapedMemo = strings.ReplaceAll(escapedMemo, "`", "\\`")
+			escapedMemo = strings.ReplaceAll(truncatedMemo, "_", "\\_")
+			escapedMemo = strings.ReplaceAll(truncatedMemo, "~", "\\~")
+			escapedMemo = strings.ReplaceAll(truncatedMemo, "`", "\\`")
 
-			details = append(details, fmt.Sprintf("*Memo:* %s", escapedMemo))
+			details = append(details, fmt.Sprintf("*メモ:* %s", escapedMemo))
 		}
 
-		// Combine details, ensuring the total length doesn't exceed Slack limits (approx 3000 chars per field)
+		// 詳細を結合。Slack の制限 (フィールドあたり約 3000 文字) を超えないようにする
 		detailsText := strings.Join(details, " | ")
-		if len(detailsText) > 2900 { // Leave some buffer
+		if len(detailsText) > 2900 { // バッファを残す
 			detailsText = detailsText[:2900] + "..."
 		}
 
 		blocks = append(blocks, slack.NewSectionBlock(
 			slack.NewTextBlockObject(slack.MarkdownType, taskText+"\n"+detailsText, false, false),
-			nil, nil), // No fields or accessory needed here for now
+			nil, nil), // ここではフィールドやアクセサリは不要
 		)
 	}
 
 	return blocks
 }
 
-// formatSlackMessage creates a simple text fallback message (less used with Block Kit).
+// formatSlackMessage は、シンプルなテキストのフォールバックメッセージを作成します (Block Kit ではあまり使用されません)。
 func formatSlackMessage(tasks []Task, now time.Time) string {
-	// This is mainly a fallback if blocks fail to render
+	// これは主に、ブロックのレンダリングに失敗した場合のフォールバックです
 	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("Notion Task Reminders (%s)\n", now.Format("2006-01-02")))
+	builder.WriteString(fmt.Sprintf("Notion タスクリマインダー (%s)\n", now.Format("2006-01-02")))
 
 	today, threeDays, sevenDays := groupTasksByUrgency(tasks, now)
 	sortTasks(today)
 	sortTasks(threeDays)
 	sortTasks(sevenDays)
 
-	appendTasksToString(&builder, "Due Today", today)
-	appendTasksToString(&builder, "Due Within 3 Days", threeDays)
-	appendTasksToString(&builder, "Due Within 7 Days", sevenDays)
+	appendTasksToString(&builder, "今日が期限", today)
+	appendTasksToString(&builder, "3 日以内に期限", threeDays)
+	appendTasksToString(&builder, "7 日以内に期限", sevenDays)
 
 	return builder.String()
 }
 
-// appendTasksToString helper for the fallback text message.
+// appendTasksToString は、フォールバックテキストメッセージのヘルパーです。
 func appendTasksToString(builder *strings.Builder, title string, tasks []Task) {
 	if len(tasks) > 0 {
 		builder.WriteString(fmt.Sprintf("\n*%s*\n", title))
 		for _, task := range tasks {
-			builder.WriteString(fmt.Sprintf("- *%s* (Due: %s", task.Title, formatDueDate(task)))
+			builder.WriteString(fmt.Sprintf("- *%s* (期限: %s", task.Title, formatDueDate(task)))
 			if task.Priority != "" {
-				builder.WriteString(fmt.Sprintf(", Priority: %s", task.Priority))
+				builder.WriteString(fmt.Sprintf(", 優先度: %s", task.Priority))
 			}
 			builder.WriteString(fmt.Sprintf(") <%s>\n", task.URL))
 		}

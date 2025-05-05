@@ -1,2 +1,4 @@
 .env
 notion-notifyer
+.vscode
+.DS_Store

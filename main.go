@@ -8,6 +8,7 @@ import (
 
 	"github.com/jomei/notionapi"
 	"github.com/slack-go/slack"
+	"github.com/spf13/cobra"
 )
 
 type Task struct {
@@ -50,54 +51,70 @@ var priorityOrder = map[string]int{
 	"":     4, // 空の優先度は最も低い
 }
 
+var rootCmd = &cobra.Command{
+	Use:   "notion-notifyer",
+	Short: "Notion Notifyer sends Slack notifications for Notion tasks.",
+	Run: func(cmd *cobra.Command, args []string) {
+		log.Println("Starting Notion Notifyer...")
+
+		daysLater, _ := cmd.Flags().GetInt("daysLater")
+
+		notionToken := os.Getenv(notionTokenEnv)
+		dbID := os.Getenv(notionDBIDEnv)
+		slackToken := os.Getenv(slackTokenEnv)
+		slackChannelID := os.Getenv(slackChannelEnv)
+
+		if notionToken == "" || dbID == "" || slackToken == "" || slackChannelID == "" {
+			log.Fatalf("Don't set all environment variables: %s, %s, %s, %s", notionTokenEnv, dbID, slackTokenEnv, slackChannelEnv)
+		}
+
+		notionClient := notionapi.NewClient(notionapi.Token(notionToken))
+		ctx := context.Background()
+
+		targetDate := time.Date(
+			time.Now().Year(),
+			time.Now().Month(),
+			time.Now().Day()+daysLater,
+			23, 59, 59, 59,
+			time.Now().Location(),
+		)
+
+		log.Printf("Get tasks due by %s", targetDate.Format("2006-01-02"))
+
+		// Notionからタスクを取得
+		tasks, err := fetchNotionTasks(ctx, notionClient, dbID, targetDate)
+		if err != nil {
+			log.Fatalf("Get Notion tasks error: %v", err)
+		}
+		log.Printf("Get %d tasks from Notion", len(tasks))
+
+		builtedTasks, err := buildSlackBlocks(tasks)
+		if err != nil {
+			log.Fatalf("Build Slack blocks error: %v", err)
+		}
+
+		slackClient := slack.New(slackToken)
+		_, timestamp, err := slackClient.PostMessage(
+			slackChannelID,
+			slack.MsgOptionBlocks(builtedTasks...),
+		)
+
+		if err != nil {
+			log.Fatalf("Slack message send error: %v", err)
+		}
+
+		log.Printf("Slack message sent to channel %s at %s", slackChannelID, timestamp)
+		log.Println("Notion Notifyer finished.")
+	},
+}
+
+func init() {
+	rootCmd.PersistentFlags().IntP("daysLater", "d", 0, "Number of days later to check for due tasks (e.g., 0 for today, 3 for 3 days later)")
+}
+
 func main() {
-	log.Println("Starting Notion Notifyer...")
-
-	// --- 設定 ---
-	notionToken := os.Getenv(notionTokenEnv)
-	dbID := os.Getenv(notionDBIDEnv)
-	slackToken := os.Getenv(slackTokenEnv)
-	slackChannelID := os.Getenv(slackChannelEnv)
-
-	if notionToken == "" || dbID == "" || slackToken == "" || slackChannelID == "" {
-		log.Fatalf("Don't set all environment variables: %s, %s, %s, %s", notionTokenEnv, dbID, slackTokenEnv, slackChannelEnv)
+	if err := rootCmd.Execute(); err != nil {
+		log.Fatalf("Error executing command: %v", err)
+		os.Exit(1)
 	}
-
-	notionClient := notionapi.NewClient(notionapi.Token(notionToken))
-	ctx := context.Background()
-
-	// TODO: コマンド化, 期限がちゃんと動いてないので、要修正
-	sevenDaysLater := time.Date(
-		time.Now().Year(),
-		time.Now().Month(),
-		time.Now().Day()+6,
-		23, 59, 59, 59,
-		time.Now().Location(),
-	)
-
-	log.Printf("Get tasks due by %s", sevenDaysLater.Format("2006-01-02"))
-	// Notionからタスクを取得
-	tasks, err := fetchNotionTasks(ctx, notionClient, dbID, sevenDaysLater)
-	if err != nil {
-		log.Fatalf("Get Notion tasks error: %v", err)
-	}
-	log.Printf("Get %d tasks from Notion", len(tasks))
-
-	builtedTasks, err := buildSlackBlocks(tasks)
-	if err != nil {
-		log.Fatalf("Build Slack blocks error: %v", err)
-	}
-
-	slackClient := slack.New(slackToken)
-	_, timestamp, err := slackClient.PostMessage(
-		slackChannelID,
-		slack.MsgOptionBlocks(builtedTasks...),
-	)
-
-	if err != nil {
-		log.Fatalf("Slack message send error: %v", err)
-	}
-
-	log.Printf("Slack message sent to channel %s at %s", slackChannelID, timestamp)
-	log.Println("Notion Notifyer finished.")
 }

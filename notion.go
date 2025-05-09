@@ -17,43 +17,37 @@ var SCHEDULE_STATUSES = []string{
 
 func fetchNotionTasks(ctx context.Context, client *notionapi.Client, dbID string, onOrBeforeDate time.Time) ([]Task, error) {
 	var allTasks []Task
-	var cursor notionapi.Cursor
 
-	for {
-		request := &notionapi.DatabaseQueryRequest{
-			Filter: &notionapi.AndCompoundFilter{
-				&notionapi.PropertyFilter{
-					Property: dueProp,
-					Date: &notionapi.DateFilterCondition{
-						OnOrBefore: (*notionapi.Date)(&onOrBeforeDate),
-					},
+	request := &notionapi.DatabaseQueryRequest{
+		Filter: &notionapi.AndCompoundFilter{
+			&notionapi.PropertyFilter{
+				Property: dueProp,
+				Date: &notionapi.DateFilterCondition{
+					OnOrBefore: (*notionapi.Date)(&onOrBeforeDate),
 				},
-				// スケジュールステータスがアクティブ/保留中のいずれか
-				createStatusFilter(),
 			},
-			Sorts: []notionapi.SortObject{
-				{Property: dueProp, Direction: notionapi.SortOrderASC},      // 期限日でソート
-				{Property: priorityProp, Direction: notionapi.SortOrderASC}, // ステータスでソート
-			},
-			StartCursor: cursor,
-		}
+			createStatusFilter(),
+		},
+		Sorts: []notionapi.SortObject{
+			{Property: dueProp, Direction: notionapi.SortOrderASC},      // 期限日でソート
+			{Property: priorityProp, Direction: notionapi.SortOrderASC}, // ステータスでソート
+		},
+	}
 
-		resp, err := client.Database.Query(ctx, notionapi.DatabaseID(dbID), request)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query database: %w", err)
-		}
+	resp, err := client.Database.Query(ctx, notionapi.DatabaseID(dbID), request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query database: %w", err)
+	}
 
-		for _, page := range resp.Results {
-			task := parseNotionPage(page)
-			if task != nil {
-				allTasks = append(allTasks, *task)
-			}
+	for _, page := range resp.Results {
+		task := parseNotionPage(page)
+		// 開始日と終了日が両方とも設定されている場合、Notion APIでは開始日が優先的にフィルターに利用されるため、終了日をチェックする
+		if task.DueEnd != nil && time.Time(*task.DueEnd).After(onOrBeforeDate) {
+			continue
 		}
-
-		if !resp.HasMore {
-			break
+		if task != nil {
+			allTasks = append(allTasks, *task)
 		}
-		cursor = resp.NextCursor
 	}
 
 	return allTasks, nil

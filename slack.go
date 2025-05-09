@@ -21,30 +21,37 @@ func buildSlackBlocks(tasks []Task) ([]slack.Block, error) {
 	}
 	now := time.Now()
 	// タスクを緊急度でグループ化
-	todayTasks, threeDayTasks, sevenDayTasks := groupTasksByUrgency(tasks)
-
+	beforeday, todayTasks, threeDayTasks := groupTasksByUrgency(tasks)
 	// 各グループ内でタスクをソート
+	sortTasks(beforeday)
 	sortTasks(todayTasks)
 	sortTasks(threeDayTasks)
-	sortTasks(sevenDayTasks)
 
 	var blocks []slack.Block
+	var err error
 
 	// ヘッダー
 	blocks = append(blocks, slack.NewHeaderBlock(slack.NewTextBlockObject(slack.PlainTextType, "🔔 Notion タスクリマインダー", true, false)))
 
 	// 各グループにタスクがある場合は、セクションを追加
-	blocks, err := appendSection(blocks, "🚨 今日が期限", todayTasks)
-	if err != nil {
-		return blocks, err
+	if len(beforeday) > 0 {
+		blocks, err = appendSection(blocks, "❗️ 期限切れ", beforeday)
+		if err != nil {
+			return blocks, err
+		}
 	}
-	blocks, err = appendSection(blocks, "⚠️ 3 日以内に期限", threeDayTasks)
-	if err != nil {
-		return blocks, err
+	// 今日が期限のタスクを追加
+	if len(todayTasks) > 0 {
+		blocks, err = appendSection(blocks, "🚨 今日が期限", todayTasks)
+		if err != nil {
+			return blocks, err
+		}
 	}
-	blocks, err = appendSection(blocks, "🗓️ 7 日以内に期限", sevenDayTasks)
-	if err != nil {
-		return blocks, err
+	if len(threeDayTasks) > 0 {
+		blocks, err = appendSection(blocks, "⚠️ 3 日以内に期限", threeDayTasks)
+		if err != nil {
+			return blocks, err
+		}
 	}
 
 	// フッター
@@ -54,29 +61,24 @@ func buildSlackBlocks(tasks []Task) ([]slack.Block, error) {
 	return blocks, nil
 }
 
-// groupTasksByUrgency は、タスクを期限日に基づいて分類します。
-func groupTasksByUrgency(tasks []Task) (today, threeDays, sevenDays []Task) {
+func groupTasksByUrgency(tasks []Task) (beforedayTasks, todayTasks, threeDayTasks []Task) {
 	now := time.Now()
-
-	todayBoundary := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
-	threeDaysBoundary := todayBoundary.AddDate(0, 0, 3)
-	sevenDaysBoundary := todayBoundary.AddDate(0, 0, 7)
+	beforeBoundary := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	todayBoundary := beforeBoundary.AddDate(0, 0, 1)
+	threeDaysBoundary := todayBoundary.AddDate(0, 0, 2)
 
 	for _, task := range tasks {
 		dueDate := getTargetDueDate(task)
-		if dueDate == nil {
-			continue
-		}
-
-		if !dueDate.After(todayBoundary) {
-			today = append(today, task)
-		} else if !dueDate.After(threeDaysBoundary) { // 1 ～ 3 日以内に期限
-			threeDays = append(threeDays, task)
-		} else if !dueDate.After(sevenDaysBoundary) { // 4 ～ 7 日以内に期限
-			sevenDays = append(sevenDays, task)
+		if dueDate.Before(beforeBoundary) { // 期限切れ
+			beforedayTasks = append(beforedayTasks, task)
+		} else if dueDate.Before(todayBoundary) { // 今日が期限
+			todayTasks = append(todayTasks, task)
+		} else if dueDate.Before(threeDaysBoundary) { // 1 ～ 3 日以内に期限
+			threeDayTasks = append(threeDayTasks, task)
 		}
 	}
-	return
+
+	return beforedayTasks, todayTasks, threeDayTasks
 }
 
 // タスクを優先度と期限日でソート

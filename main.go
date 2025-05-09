@@ -67,7 +67,15 @@ func main() {
 	ctx := context.Background()
 
 	// TODO: コマンド化, 期限がちゃんと動いてないので、要修正
-	sevenDaysLater := time.Now().AddDate(0, 0, 7)
+	sevenDaysLater := time.Date(
+		time.Now().Year(),
+		time.Now().Month(),
+		time.Now().Day()+6,
+		23, 59, 59, 59,
+		time.Now().Location(),
+	)
+
+	log.Printf("Get tasks due by %s", sevenDaysLater.Format("2006-01-02"))
 	// Notionからタスクを取得
 	tasks, err := fetchNotionTasks(ctx, notionClient, dbID, sevenDaysLater)
 	if err != nil {

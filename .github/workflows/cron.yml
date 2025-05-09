@@ -6,7 +6,7 @@ on:
     - cron: '0 0 * * *'
     # Run at 1 PM JST (04:00 UTC)
     - cron: '0 4 * * *'
-  workflow_dispatch: # Allows manual triggering from the Actions tab
+  workflow_dispatch:
 
 jobs:
   run_notifier:
@@ -29,3 +29,7 @@ jobs:
         # Corresponds to 1 PM JST
         if: github.event.schedule == '0 4 * * *'
         run: go run . --daysLater 3
+
+      - name: Run Notion Notifier (Manual Dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: go run . --daysLater 0

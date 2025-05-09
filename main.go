@@ -44,10 +44,10 @@ const (
 
 // 優先度の順序マッピング
 var priorityOrder = map[string]int{
-	"High":   1,
-	"Medium": 2,
-	"Low":    3,
-	"":       4, // 空の優先度は最も低い
+	"High": 1,
+	"Mid":  2,
+	"Low":  3,
+	"":     4, // 空の優先度は最も低い
 }
 
 func main() {
@@ -66,7 +66,7 @@ func main() {
 	notionClient := notionapi.NewClient(notionapi.Token(notionToken))
 	ctx := context.Background()
 
-	// TODO: コマンド化
+	// TODO: コマンド化, 期限がちゃんと動いてないので、要修正
 	sevenDaysLater := time.Now().AddDate(0, 0, 7)
 	// Notionからタスクを取得
 	tasks, err := fetchNotionTasks(ctx, notionClient, dbID, sevenDaysLater)
@@ -75,12 +75,17 @@ func main() {
 	}
 	log.Printf("Get %d tasks from Notion", len(tasks))
 
-	// Slack メッセージの送信
+	builtedTasks, err := buildSlackBlocks(tasks)
+	if err != nil {
+		log.Fatalf("Build Slack blocks error: %v", err)
+	}
+
 	slackClient := slack.New(slackToken)
 	_, timestamp, err := slackClient.PostMessage(
 		slackChannelID,
-		slack.MsgOptionBlocks(buildSlackBlocks(tasks)...),
+		slack.MsgOptionBlocks(builtedTasks...),
 	)
+
 	if err != nil {
 		log.Fatalf("Slack message send error: %v", err)
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -9,7 +10,15 @@ import (
 	"github.com/slack-go/slack"
 )
 
-func buildSlackBlocks(tasks []Task) []slack.Block {
+const (
+	MAX_MESSAGE_LENGTH = 3000 // Slack メッセージの最大長
+	MAX_MEMO_LENGTH    = 1000 // メモの最大長
+)
+
+func buildSlackBlocks(tasks []Task) ([]slack.Block, error) {
+	if len(tasks) == 0 {
+		return nil, nil
+	}
 	now := time.Now()
 	// タスクを緊急度でグループ化
 	todayTasks, threeDayTasks, sevenDayTasks := groupTasksByUrgency(tasks)
@@ -25,21 +34,31 @@ func buildSlackBlocks(tasks []Task) []slack.Block {
 	blocks = append(blocks, slack.NewHeaderBlock(slack.NewTextBlockObject(slack.PlainTextType, "🔔 Notion タスクリマインダー", true, false)))
 
 	// 各グループにタスクがある場合は、セクションを追加
-	blocks = appendSection(blocks, "🚨 今日が期限", todayTasks)
-	blocks = appendSection(blocks, "⚠️ 3 日以内に期限", threeDayTasks)
-	blocks = appendSection(blocks, "🗓️ 7 日以内に期限", sevenDayTasks)
+	blocks, err := appendSection(blocks, "🚨 今日が期限", todayTasks)
+	if err != nil {
+		return blocks, err
+	}
+	blocks, err = appendSection(blocks, "⚠️ 3 日以内に期限", threeDayTasks)
+	if err != nil {
+		return blocks, err
+	}
+	blocks, err = appendSection(blocks, "🗓️ 7 日以内に期限", sevenDayTasks)
+	if err != nil {
+		return blocks, err
+	}
 
 	// フッター
 	blocks = append(blocks, slack.NewDividerBlock())
-	blocks = append(blocks, slack.NewContextBlock("", slack.NewTextBlockObject(slack.MarkdownType, fmt.Sprintf("生成日時: %s", now.Format(time.RFC1123)), false, false)))
+	blocks = append(blocks, slack.NewContextBlock("", slack.NewTextBlockObject(slack.PlainTextType, fmt.Sprintf("CreatedAt: %s", now.Format(time.RFC1123)), false, false)))
 
-	return blocks
+	return blocks, nil
 }
 
 // groupTasksByUrgency は、タスクを期限日に基づいて分類します。
 func groupTasksByUrgency(tasks []Task) (today, threeDays, sevenDays []Task) {
 	now := time.Now()
-	todayBoundary := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	todayBoundary := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
 	threeDaysBoundary := todayBoundary.AddDate(0, 0, 3)
 	sevenDaysBoundary := todayBoundary.AddDate(0, 0, 7)
 
@@ -48,20 +67,19 @@ func groupTasksByUrgency(tasks []Task) (today, threeDays, sevenDays []Task) {
 		if dueDate == nil {
 			continue
 		}
-		dueDateTime := time.Date(dueDate.Year(), dueDate.Month(), dueDate.Day(), 0, 0, 0, 0, now.Location())
 
-		if !dueDateTime.After(todayBoundary) {
+		if !dueDate.After(todayBoundary) {
 			today = append(today, task)
-		} else if !dueDateTime.After(threeDaysBoundary) { // 1 ～ 3 日以内に期限
+		} else if !dueDate.After(threeDaysBoundary) { // 1 ～ 3 日以内に期限
 			threeDays = append(threeDays, task)
-		} else if !dueDateTime.After(sevenDaysBoundary) { // 4 ～ 7 日以内に期限
+		} else if !dueDate.After(sevenDaysBoundary) { // 4 ～ 7 日以内に期限
 			sevenDays = append(sevenDays, task)
 		}
 	}
 	return
 }
 
-// sortTasks は、最初に優先度 (高 > 中 > 低 > なし) でタスクをソートし、次に期限日でソートします。
+// タスクを優先度と期限日でソート
 func sortTasks(tasks []Task) {
 	sort.SliceStable(tasks, func(i, j int) bool {
 		priI := priorityOrder[tasks[i].Priority]
@@ -75,15 +93,13 @@ func sortTasks(tasks []Task) {
 		if dueI != nil && dueJ != nil {
 			return dueI.Before(*dueJ)
 		}
-		// nil の場合を処理 (理想的には発生しないはず)
-		return dueI != nil
+		return false // どちらかが nil の場合は、順序を変更しない
 	})
 }
 
-// appendSection は、タスクグループのフォーマットされたセクションを Slack ブロックに追加します。
-func appendSection(blocks []slack.Block, title string, tasks []Task) []slack.Block {
+func appendSection(blocks []slack.Block, title string, tasks []Task) ([]slack.Block, error) {
 	if len(tasks) == 0 {
-		return blocks // 空のセクションは追加しない
+		return blocks, nil
 	}
 
 	blocks = append(blocks, slack.NewDividerBlock())
@@ -93,99 +109,67 @@ func appendSection(blocks []slack.Block, title string, tasks []Task) []slack.Blo
 	)
 
 	for _, task := range tasks {
-		taskText := fmt.Sprintf("*<%s|%s>*", task.URL, task.Title) // リンク + タイトル
+		strTaskTitle := fmt.Sprintf("*<%s|%s>*", task.URL, task.Title) // リンク + タイトル
 
 		var details []string
-		details = append(details, fmt.Sprintf("*期限:* %s", formatDueDate(task)))
+		strTime, err := formatDueDate(task)
+		if err != nil {
+			return blocks, fmt.Errorf("failed to format due date for task %s: %w", task.Title, err)
+		}
+		details = append(details, fmt.Sprintf("*期限日:* %s", strTime))
 		if task.Priority != "" {
-			priorityEmoji := ""
-			switch task.Priority {
-			case "High":
-				priorityEmoji = "🔴 "
-			case "Medium":
-				priorityEmoji = "🔵 "
-			case "Low":
-				priorityEmoji = "⚫ "
-			}
-			details = append(details, fmt.Sprintf("*優先度:* %s%s", priorityEmoji, task.Priority))
+			details = append(details, fmt.Sprintf("*優先度:* %s", task.Priority))
 		}
 		if task.Type != "" {
 			details = append(details, fmt.Sprintf("*種類:* %s", task.Type))
 		}
 		if task.ScheduleStatus != "" {
-			details = append(details, fmt.Sprintf("*ステータス:* %s", task.ScheduleStatus))
+			details = append(details, fmt.Sprintf("*スケジュール:* %s", task.ScheduleStatus))
 		}
 		if task.Workload != 0 {
 			details = append(details, fmt.Sprintf("*ワークロード:* %.2f", task.Workload))
 		}
-		// メモが存在する場合は追加。Slack ブロックの制限を超える場合は切り捨て
+
 		if task.Memo != "" {
-			maxMemoLength := 150 // メインブロックのメモの最大長
 			truncatedMemo := task.Memo
-			if len(truncatedMemo) > maxMemoLength {
-				truncatedMemo = truncatedMemo[:maxMemoLength] + "..."
+			// メモが長すぎる場合は切り捨て
+			if len(truncatedMemo) > MAX_MEMO_LENGTH {
+				truncatedMemo = truncatedMemo[:MAX_MEMO_LENGTH] + "..."
 			}
-			// メモ内の Markdown 文字をエスケープ
 			details = append(details, fmt.Sprintf("*メモ:* %s", truncatedMemo))
 		}
 
-		// 詳細を結合。Slack の制限 (フィールドあたり約 3000 文字) を超えないようにする
+		// 文字数制限を超える場合は切り捨て
 		detailsText := strings.Join(details, " | ")
-		if len(detailsText) > 2900 { // バッファを残す
-			detailsText = detailsText[:2900] + "..."
+		if len(detailsText) > MAX_MESSAGE_LENGTH {
+			detailsText = detailsText[:MAX_MESSAGE_LENGTH] + "..."
 		}
 
 		blocks = append(blocks, slack.NewSectionBlock(
-			slack.NewTextBlockObject(slack.MarkdownType, taskText+"\n"+detailsText, false, false),
-			nil, nil), // ここではフィールドやアクセサリは不要
+			slack.NewTextBlockObject(slack.MarkdownType, strTaskTitle+"\n"+detailsText, false, false),
+			nil, nil),
 		)
 	}
 
-	return blocks
+	return blocks, nil
 }
 
 // formatDueDate は表示用に期限日をフォーマットします。
-func formatDueDate(task Task) string {
-	layout := "2006-01-02" // 日付のみのレイアウト
-	if task.DueEnd != nil {
-		// 終了日が存在する場合、開始日も存在し、かつ異なるかどうかを確認
-		if task.DueStart != nil && !time.Time(*task.DueStart).Equal(time.Time(*task.DueEnd)) {
-			// 同じ日の場合は、時刻をフォーマット
-			startT := time.Time(*task.DueStart)
-			endT := time.Time(*task.DueEnd)
-			if startT.Year() == endT.Year() && startT.Month() == endT.Month() && startT.Day() == endT.Day() {
-				timeLayout := "15:04" // 時刻のみのレイアウト (利用可能な場合)
-				startStr := ""
-				endStr := ""
-				if !startT.IsZero() && startT.Hour() != 0 || startT.Minute() != 0 { // 時刻部分に意味があるか確認
-					startStr = startT.Format(timeLayout)
-				}
-				if !endT.IsZero() && endT.Hour() != 0 || endT.Minute() != 0 { // 時刻部分に意味があるか確認
-					endStr = endT.Format(timeLayout)
-				}
-				if startStr != "" && endStr != "" {
-					return fmt.Sprintf("%s (%s ~ %s)", endT.Format(layout), startStr, endStr)
-				} else if endStr != "" { // 終了時刻のみ意味がある
-					return fmt.Sprintf("%s (~%s)", endT.Format(layout), endStr)
-				} else if startStr != "" { // 開始時刻のみ意味がある
-					return fmt.Sprintf("%s (%s~)", endT.Format(layout), startStr)
-				}
-				// 時刻がゼロの場合はフォールバック
-				return endT.Format(layout)
+func formatDueDate(task Task) (string, error) {
+	startTime := task.DueStart
+	endTime := task.DueEnd
 
-			} else {
-				// 日付が異なる場合
-				return fmt.Sprintf("%s ~ %s", startT.Format(layout), endT.Format(layout))
-			}
-		}
-		// 終了日のみ存在するか、開始日と終了日が同じ場合
-		return time.Time(*task.DueEnd).Format(layout)
+	if startTime == nil && endTime == nil {
+		return "", errors.New("startTime and endTime are both nil")
 	}
 
-	if task.DueStart != nil {
-		return time.Time(*task.DueStart).Format(layout)
+	if startTime != nil && endTime != nil {
+		startTimeStr := timeFormat(time.Time(*startTime))
+		endTimeStr := timeFormat(time.Time(*endTime))
+		return fmt.Sprintf("%s ~ %s", startTimeStr, endTimeStr), nil
 	}
-	return "N/A"
+
+	return timeFormat(time.Time(*startTime)), nil
 }
 
 // タスクの目標期限日を取得 (endDate優先)
@@ -199,4 +183,15 @@ func getTargetDueDate(task Task) *time.Time {
 		return &t
 	}
 	return nil
+}
+
+func timeFormat(t time.Time) string {
+	month := int(t.Month())
+	day := t.Day()
+	hour := t.Hour()
+	minute := t.Minute()
+	if hour != 0 {
+		return fmt.Sprintf("%02d/%02d %02d:%02d", month, day, hour, minute)
+	}
+	return fmt.Sprintf("%02d/%02d", month, day)
 }

@@ -11,6 +11,10 @@ import (
 	"github.com/jomei/notionapi"
 )
 
+var SCHEDULE_STATUSES = []string{
+	"CannotDo", "Next", "Want", "ToDo", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Doing",
+}
+
 func fetchNotionTasks(ctx context.Context, client *notionapi.Client, dbID string, onOrBeforeDate time.Time) ([]Task, error) {
 	var allTasks []Task
 	var cursor notionapi.Cursor
@@ -56,9 +60,8 @@ func fetchNotionTasks(ctx context.Context, client *notionapi.Client, dbID string
 }
 
 func createStatusFilter() notionapi.OrCompoundFilter {
-	relevantStatuses := []string{"CannotDo", "Next", "Want", "ToDo", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Doing"}
 	var filters []notionapi.Filter
-	for _, status := range relevantStatuses {
+	for _, status := range SCHEDULE_STATUSES {
 		filters = append(filters, &notionapi.PropertyFilter{
 			Property: scheduleStatusProp,
 			Status: &notionapi.StatusFilterCondition{

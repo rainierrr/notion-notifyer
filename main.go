@@ -65,7 +65,7 @@ var rootCmd = &cobra.Command{
 		slackChannelID := os.Getenv(slackChannelEnv)
 
 		if notionToken == "" || dbID == "" || slackToken == "" || slackChannelID == "" {
-			log.Fatalf("Don't set all environment variables: %s, %s, %s, %s", notionTokenEnv, dbID, slackTokenEnv, slackChannelEnv)
+			log.Fatalf("Don't set all environment variables: %s, %s, %s, %s", notionTokenEnv, notionDBIDEnv, slackTokenEnv, slackChannelEnv)
 		}
 
 		notionClient := notionapi.NewClient(notionapi.Token(notionToken))
@@ -87,6 +87,11 @@ var rootCmd = &cobra.Command{
 			log.Fatalf("Get Notion tasks error: %v", err)
 		}
 		log.Printf("Get %d tasks from Notion", len(tasks))
+
+		if len(tasks) == 0 {
+			log.Println("No tasks found.")
+			return
+		}
 
 		builtedTasks, err := buildSlackBlocks(tasks)
 		if err != nil {

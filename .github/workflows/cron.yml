@@ -8,6 +8,12 @@ on:
     - cron: '0 4 * * *'
   workflow_dispatch:
 
+env:
+  NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+  NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
+  SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+  SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+
 jobs:
   run_notifier:
     runs-on: ubuntu-latest

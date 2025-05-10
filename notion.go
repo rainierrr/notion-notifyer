@@ -12,7 +12,7 @@ import (
 )
 
 var SCHEDULE_STATUSES = []string{
-	"CannotDo", "Next", "Want", "ToDo", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Doing",
+	"CannotDo", "Next", "Want", "ToDo", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Doing", "iPhone Task",
 }
 
 func fetchNotionTasks(ctx context.Context, client *notionapi.Client, dbID string, onOrBeforeDate time.Time) ([]Task, error) {

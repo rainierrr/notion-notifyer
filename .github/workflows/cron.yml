@@ -25,17 +25,12 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
-
+      - name: Build Go application
+        run: go build -o notion-notifier .
       - name: Run Notion Notifier (9 AM JST schedule)
-        # Corresponds to 9 AM JST
         if: github.event.schedule == '0 0 * * *'
-        run: go run . --daysLater 0
+        run: ./notion-notifier --daysLater 3
 
       - name: Run Notion Notifier (1 PM JST schedule)
-        # Corresponds to 1 PM JST
-        if: github.event.schedule == '0 4 * * *'
-        run: go run . --daysLater 3
-
-      - name: Run Notion Notifier (Manual Dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        run: go run . --daysLater 0
+        if: github.event.schedule == '0 4 * * *' || github.event_name == 'workflow_dispatch'
+        run: ./notion-notifier --daysLater 0

@@ -98,6 +98,11 @@ var rootCmd = &cobra.Command{
 			log.Fatalf("Build Slack blocks error: %v", err)
 		}
 
+		if len(builtedTasks) <= 3 {
+			log.Println("No tasks to notify after filtering")
+			return
+		}
+
 		slackClient := slack.New(slackToken)
 		_, timestamp, err := slackClient.PostMessage(
 			slackChannelID,

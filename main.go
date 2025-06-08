@@ -11,19 +11,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type Task struct {
-	ID             notionapi.ObjectID
-	Title          string
-	DueStart       *notionapi.Date
-	DueEnd         *notionapi.Date
-	Priority       string // High, Medium, Low,
-	Type           string
-	ScheduleStatus string
-	Workload       float32
-	Memo           string
-	URL            string
-}
-
 // 環境変数
 const (
 	notionTokenEnv  = "NOTION_TOKEN"
@@ -42,14 +29,6 @@ const (
 	nameProp           = "Name"
 	dueProp            = "Due"
 )
-
-// 優先度の順序マッピング
-var priorityOrder = map[string]int{
-	"High": 1,
-	"Mid":  2,
-	"Low":  3,
-	"":     4, // 空の優先度は最も低い
-}
 
 var rootCmd = &cobra.Command{
 	Use:   "notion-notifyer",

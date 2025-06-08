@@ -11,6 +11,27 @@ import (
 	"github.com/jomei/notionapi"
 )
 
+type Task struct {
+	ID             notionapi.ObjectID
+	Title          string
+	DueStart       *notionapi.Date
+	DueEnd         *notionapi.Date
+	Priority       string // High, Medium, Low,
+	Type           string
+	ScheduleStatus string
+	Workload       float32
+	Memo           string
+	URL            string
+}
+
+// 優先度の順序マッピング
+var priorityOrder = map[string]int{
+	"High": 1,
+	"Mid":  2,
+	"Low":  3,
+	"":     4, // 空の優先度は最も低い
+}
+
 var SCHEDULE_STATUSES = []string{
 	"CannotDo", "Next", "Want", "ToDo", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Doing", "iPhone Task",
 }

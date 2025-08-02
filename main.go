@@ -37,6 +37,10 @@ var rootCmd = &cobra.Command{
 		log.Println("Starting Notion Notifyer...")
 
 		daysLater, _ := cmd.Flags().GetInt("daysLater")
+		if daysLater > 3 {
+			log.Printf("Warning: daysLater is limited to 3 days maximum. Using 3 instead of %d", daysLater)
+			daysLater = 3
+		}
 
 		notionToken := os.Getenv(notionTokenEnv)
 		dbID := os.Getenv(notionDBIDEnv)

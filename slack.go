@@ -17,7 +17,7 @@ const (
 
 func buildSlackBlocks(tasks []Task) ([]slack.Block, error) {
 	if len(tasks) == 0 {
-		return nil, nil
+		return nil, errors.New("no tasks to build slack blocks")
 	}
 	now := time.Now()
 	// タスクを緊急度でグループ化
@@ -65,7 +65,6 @@ func groupTasksByUrgency(tasks []Task) (beforedayTasks, todayTasks, threeDayTask
 	now := time.Now()
 	beforeBoundary := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	todayBoundary := beforeBoundary.AddDate(0, 0, 1)
-	threeDaysBoundary := todayBoundary.AddDate(0, 0, 2)
 
 	for _, task := range tasks {
 		dueDate := getTargetDueDate(task)
@@ -73,7 +72,7 @@ func groupTasksByUrgency(tasks []Task) (beforedayTasks, todayTasks, threeDayTask
 			beforedayTasks = append(beforedayTasks, task)
 		} else if dueDate.Before(todayBoundary) { // 今日が期限
 			todayTasks = append(todayTasks, task)
-		} else if dueDate.Before(threeDaysBoundary) { // 1 ～ 3 日以内に期限
+		} else { // 1 ～ 3 日以内に期限
 			threeDayTasks = append(threeDayTasks, task)
 		}
 	}

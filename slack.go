@@ -15,11 +15,10 @@ const (
 	MAX_MEMO_LENGTH    = 1000 // メモの最大長
 )
 
-func buildSlackBlocks(tasks []Task) ([]slack.Block, error) {
+func buildSlackBlocks(tasks []Task, runNumber string) ([]slack.Block, error) {
 	if len(tasks) == 0 {
 		return nil, errors.New("no tasks to build slack blocks")
 	}
-	now := time.Now()
 	// タスクを緊急度でグループ化
 	beforeday, todayTasks, threeDayTasks := groupTasksByUrgency(tasks)
 	// 各グループ内でタスクをソート
@@ -56,7 +55,11 @@ func buildSlackBlocks(tasks []Task) ([]slack.Block, error) {
 
 	// フッター
 	blocks = append(blocks, slack.NewDividerBlock())
-	blocks = append(blocks, slack.NewContextBlock("", slack.NewTextBlockObject(slack.PlainTextType, fmt.Sprintf("CreatedAt: %s", now.Format(time.RFC1123)), false, false)))
+	
+	// GitHub Actions Run Numberがある場合は追加
+	if runNumber != "" {
+		blocks = append(blocks, slack.NewContextBlock("", slack.NewTextBlockObject(slack.PlainTextType, fmt.Sprintf("Run #%s", runNumber), false, false)))
+	}
 
 	return blocks, nil
 }

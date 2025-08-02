@@ -36,6 +36,12 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		log.Println("Starting Notion Notifyer...")
 
+		// GitHub Actions Run Numberを取得
+		runNumber := os.Getenv("GITHUB_RUN_NUMBER")
+		if runNumber != "" {
+			log.Printf("GitHub Actions Run Number: %s", runNumber)
+		}
+
 		daysLater, _ := cmd.Flags().GetInt("daysLater")
 		if daysLater > 3 {
 			log.Printf("Warning: daysLater is limited to 3 days maximum. Using 3 instead of %d", daysLater)
@@ -76,7 +82,7 @@ var rootCmd = &cobra.Command{
 			return
 		}
 
-		builtedTasks, err := buildSlackBlocks(tasks)
+		builtedTasks, err := buildSlackBlocks(tasks, runNumber)
 		if err != nil {
 			log.Fatalf("Build Slack blocks error: %v", err)
 		}
